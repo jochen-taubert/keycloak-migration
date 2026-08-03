@@ -2,10 +2,10 @@ package de.usermigration.application.service;
 
 
 import de.usermigration.domain.model.enums.RoleEnum;
-import de.usermigration.infrastructure.keycloak.KeycloakMigrationService;
-import de.usermigration.infrastructure.keycloak.KeycloakProperties;
-import de.usermigration.infrastructure.keycloak.LegacyJwtService;
+import de.usermigration.infrastructure.keycloak.service.KeycloakMigrationService;
+import de.usermigration.infrastructure.keycloak.config.KeycloakProperties;
 import de.usermigration.domain.model.entity.UserEntity;
+import de.usermigration.infrastructure.keycloak.service.LegacyJwtService;
 import de.usermigration.infrastructure.persistence.repositories.UserRepository;
 import de.usermigration.infrastructure.rest.LoginResponse;
 import jakarta.persistence.EntityManager;

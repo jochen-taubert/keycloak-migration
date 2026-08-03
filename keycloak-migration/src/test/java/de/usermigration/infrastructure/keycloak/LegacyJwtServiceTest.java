@@ -8,6 +8,8 @@ import de.usermigration.domain.model.enums.RoleEnum;
 import de.usermigration.domain.model.entity.RoleEntity;
 import de.usermigration.domain.model.entity.RoleGroupEntity;
 import de.usermigration.domain.model.entity.UserEntity;
+import de.usermigration.infrastructure.keycloak.service.LegacyJwtService;
+import de.usermigration.infrastructure.keycloak.dto.LegacyUserInfo;
 import de.usermigration.domain.model.enums.SystemOrigin;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;

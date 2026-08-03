@@ -2,6 +2,10 @@ package de.usermigration.infrastructure.keycloak;
 
 import de.usermigration.UnitTest;
 import de.usermigration.domain.model.entity.UserEntity;
+import de.usermigration.infrastructure.keycloak.config.KeycloakProperties;
+import de.usermigration.infrastructure.keycloak.service.KeycloakMigrationService;
+import de.usermigration.infrastructure.keycloak.service.LegacyJwtService;
+import de.usermigration.infrastructure.security.filter.LegacyJwtMigrationFilter;
 import de.usermigration.infrastructure.persistence.repositories.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;

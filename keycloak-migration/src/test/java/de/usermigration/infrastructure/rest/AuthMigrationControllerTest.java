@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.usermigration.UnitTest;
 import de.usermigration.application.service.AuthenticationService;
-import de.usermigration.infrastructure.keycloak.LegacyJwtMigrationFilter;
+import de.usermigration.infrastructure.security.filter.LegacyJwtMigrationFilter;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

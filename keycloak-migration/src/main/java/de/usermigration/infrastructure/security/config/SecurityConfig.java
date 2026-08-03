@@ -1,7 +1,7 @@
 package de.usermigration.infrastructure.security.config;
 
-import de.usermigration.infrastructure.keycloak.KeycloakProperties;
-import de.usermigration.infrastructure.keycloak.LegacyJwtMigrationFilter;
+import de.usermigration.infrastructure.keycloak.config.KeycloakProperties;
+import de.usermigration.infrastructure.security.filter.LegacyJwtMigrationFilter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;

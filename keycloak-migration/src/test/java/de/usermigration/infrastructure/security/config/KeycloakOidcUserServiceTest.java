@@ -1,7 +1,7 @@
 package de.usermigration.infrastructure.security.config;
 
 import de.usermigration.UnitTest;
-import de.usermigration.infrastructure.keycloak.KeycloakProperties;
+import de.usermigration.infrastructure.keycloak.config.KeycloakProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

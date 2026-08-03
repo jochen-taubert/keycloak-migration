@@ -1,8 +1,8 @@
 package de.usermigration.infrastructure.rest;
 
 import de.usermigration.UnitTest;
-import de.usermigration.infrastructure.keycloak.KeycloakProperties;
-import de.usermigration.infrastructure.keycloak.LegacyJwtMigrationFilter;
+import de.usermigration.infrastructure.keycloak.config.KeycloakProperties;
+import de.usermigration.infrastructure.security.filter.LegacyJwtMigrationFilter;
 import de.usermigration.infrastructure.security.config.SecurityConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
