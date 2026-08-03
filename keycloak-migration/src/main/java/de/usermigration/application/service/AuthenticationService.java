@@ -74,14 +74,9 @@ public class AuthenticationService {
             throw new RuntimeException("User account is not properly configured");
         }
         log.info("Matching password for user: {}. Encoded in DB: {}", username, user.getPasswd());
-        try {
-            if (!matchesPassword(password, user.getPasswd())) {
-                log.warn("Invalid password for user: {}", username);
-                throw new RuntimeException("Invalid credentials");
-            }
-        } catch (Exception e) {
-            log.error("Error during password matching for user: {}: {}", username, e.getMessage(), e);
-            throw new RuntimeException("Authentication error", e);
+        if (!matchesPassword(password, user.getPasswd())) {
+            log.warn("Invalid password for user: {}", username);
+            throw new RuntimeException("Invalid credentials");
         }
 
         // 4. Rollen laden
