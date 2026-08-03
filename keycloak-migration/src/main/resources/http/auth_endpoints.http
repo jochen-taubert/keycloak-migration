@@ -1,0 +1,129 @@
+### =============================================================================
+### AUTH ENDPOINTS: the two ways a request can carry legacy authentication.
+###
+### 1. PRE-CREATED LEGACY TOKEN: a request arrives with a legacy JWT the caller
+###    already has - e.g. issued earlier by this app, or (in production) by the
+###    other legacy app (easytime-api) sharing the same JWT_LEGACY_SECRET/ISSUER.
+###    No /auth/login call happens in this run; LegacyJwtMigrationFilter just
+###    validates the token's signature/expiry, reads the username from it, and
+###    (if KEYCLOAK_MIGRATE_USERS=true and the user isn't migrated yet) triggers
+###    migrateUserWithoutPassword() in the background - the password is never
+###    involved on this path.
+###
+### 2. FRESH LOGIN HERE: POST /auth/login with username+password, checked
+###    directly against test_user.passwd (BCrypt, falling back to legacy
+###    MD5-then-Base64). This is the only endpoint that actually verifies a
+###    password and mints a brand-new legacy token pair.
+###
+### Requires:
+###  - Postgres reachable with a user in test_user (login/password)
+###  - legacy_username / legacy_password set in http-client.private.env.json
+###    (gitignored - copy http-client.private.env.json.example to get started)
+###  - pre_created_legacy_token set in http-client.private.env.json for section 1:
+###    get one by running section 2 below once and copying authXBVO.token from
+###    the response, or (in production) from a real easytime-api /auth/login
+###    response - either is valid here since both apps sign with the same secret.
+### =============================================================================
+
+### =============================================================================
+### 1. PRE-CREATED LEGACY TOKEN (obtained elsewhere, not from a login in this run)
+### =============================================================================
+
+### 1a. Refresh using the pre-created token - proves an externally-issued legacy
+### token is accepted on its own, with no prior login call in this session.
+POST {{baseUrl}}/api/auth/refresh
+Authorization: Bearer {{pre_created_legacy_token}}
+
+> {%
+    client.test("Pre-created token accepted for refresh", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status +
+            " - is pre_created_legacy_token set and not expired? (default lifetime 1h)");
+    });
+
+    if (response.status === 200) {
+        var authInfo = response.body[0].authXBVO;
+        client.log("Refreshed for user: " + authInfo.login);
+        client.global.set("legacy_token_from_pretoken", authInfo.token);
+    }
+%}
+
+### 1b. Same pre-created token reaching a protected endpoint directly - this is
+### the path LegacyJwtMigrationFilter handles: validate token -> look up user by
+### username -> migrate to Keycloak in the background if not migrated yet, all
+### without ever touching the password.
+GET {{baseUrl}}/api/admin/whoami
+Authorization: Bearer {{pre_created_legacy_token}}
+
+> {%
+    client.test("Pre-created token accepted for a protected endpoint", function() {
+        client.assert(response.status === 200 || response.status === 403,
+            "Expected 200 (has SYSTEM_ADMIN) or 403 (authenticated, wrong role), got " + response.status);
+    });
+    client.log("Status: " + response.status);
+    if (response.status === 200) {
+        client.log("whoami: " + JSON.stringify(response.body));
+    }
+%}
+
+### =============================================================================
+### 2. FRESH LOGIN HERE (username + password, checked against test_user.passwd)
+### =============================================================================
+
+### 2a. Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{legacy_username}}",
+  "password": "{{legacy_password}}"
+}
+
+> {%
+    client.test("Login successful", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status);
+    });
+
+    client.test("Response is the legacy single-element array", function() {
+        client.assert(Array.isArray(response.body) && response.body.length === 1,
+            "Expected a single-element array");
+    });
+
+    var authInfo = response.body[0].authXBVO;
+
+    client.test("Fresh token pair returned", function() {
+        client.assert(authInfo.token !== undefined, "Access token missing");
+        client.assert(authInfo.refreshToken !== undefined, "Refresh token missing");
+    });
+
+    client.global.set("fresh_legacy_token", authInfo.token);
+    client.global.set("fresh_refresh_token", authInfo.refreshToken);
+
+    client.log("Login: " + authInfo.login);
+    client.log("Migrated: " + authInfo.migrated + " (keycloakUserId: " + authInfo.keycloakUserId + ")");
+    client.log("Roles (numeric legacy IDs): " + JSON.stringify(authInfo.roles));
+    client.log("");
+    client.log("If you need a pre_created_legacy_token for section 1, copy the value above:");
+    client.log(authInfo.token);
+%}
+
+### 2b. The freshly issued token reaching a protected endpoint
+GET {{baseUrl}}/api/admin/whoami
+Authorization: Bearer {{fresh_legacy_token}}
+
+> {%
+    client.test("Fresh token accepted", function() {
+        client.assert(response.status === 200 || response.status === 403,
+            "Expected 200 (has SYSTEM_ADMIN) or 403 (authenticated, wrong role), got " + response.status);
+    });
+    client.log("Status: " + response.status);
+%}
+
+### 2c. Refresh the freshly issued token
+POST {{baseUrl}}/api/auth/refresh
+Authorization: Bearer {{fresh_refresh_token}}
+
+> {%
+    client.test("Refresh with fresh token successful", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status);
+    });
+%}

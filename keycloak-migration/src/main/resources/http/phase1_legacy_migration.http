@@ -1,0 +1,195 @@
+### =============================================================================
+### PHASE 1: legacy token -> validate -> roles/groups from DB -> create Keycloak
+### user (if not migrated yet) with those roles -> save migrated_at/keycloak_id ->
+### response still carries a legacy token -> that token reaches a protected
+### endpoint (/admin/whoami, hasRole("SYSTEM_ADMIN")).
+###
+### Also covers PERSONNEL role isolation (/personnel/whoami, @PreAuthorize) at the
+### end of this file, using the default seeded "personnel" account.
+###
+### Requires:
+###  - KEYCLOAK_MIGRATE_USERS=true (otherwise login never touches Keycloak)
+###  - Postgres reachable, with a user in test_user (login/password) that has
+###    the SYSTEM_ADMIN role via test_role/test_role_group
+###  - Keycloak reachable at {{keycloakUrl}}, realm {{keycloakRealm}}
+###  - legacy_username / legacy_password set in http-client.private.env.json
+###    (gitignored - copy http-client.private.env.json.example to get started)
+### =============================================================================
+
+### 1. Health check (no auth)
+GET {{baseUrl}}/api/actuator/health
+
+> {%
+    client.test("App is up", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status);
+    });
+%}
+
+### 2. Legacy login - migrates the user to Keycloak on first successful login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{legacy_username}}",
+  "password": "{{legacy_password}}"
+}
+
+> {%
+    client.test("Login successful", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status);
+    });
+
+    client.test("Response is the legacy single-element array", function() {
+        client.assert(Array.isArray(response.body) && response.body.length === 1, "Expected a single-element array");
+    });
+
+    var authInfo = response.body[0].authXBVO;
+
+    client.test("Legacy token returned", function() {
+        client.assert(authInfo.token !== undefined, "Access token missing");
+        client.assert(authInfo.refreshToken !== undefined, "Refresh token missing");
+    });
+
+    client.global.set("legacy_token", authInfo.token);
+    client.global.set("refresh_token", authInfo.refreshToken);
+
+    client.log("Login: " + authInfo.login);
+    client.log("Migrated: " + authInfo.migrated + " (keycloakUserId: " + authInfo.keycloakUserId + ")");
+    client.log("Roles (numeric legacy IDs): " + JSON.stringify(authInfo.roles));
+    if (authInfo.migrationError) {
+        client.log("migrationError: " + authInfo.migrationError);
+    }
+%}
+
+### 3. Protected endpoint reachable via the legacy token (AUTH_ROLES claim)
+# Needs the logged-in user to actually have SYSTEM_ADMIN in test_role/test_role_group.
+GET {{baseUrl}}/api/admin/whoami
+Authorization: Bearer {{legacy_token}}
+
+> {%
+    client.test("Legacy token accepted for /admin/whoami", function() {
+        client.assert(response.status === 200, "Expected 200 (user needs SYSTEM_ADMIN), got " + response.status);
+    });
+
+    if (response.status === 200) {
+        client.log("whoami: " + JSON.stringify(response.body));
+        client.test("Roles mapped to ROLE_SYSTEM_ADMIN", function() {
+            client.assert(response.body.roles.indexOf("ROLE_SYSTEM_ADMIN") !== -1,
+                "Expected ROLE_SYSTEM_ADMIN in " + JSON.stringify(response.body.roles));
+        });
+        client.test("authType reflects the resource-server bearer path", function() {
+            client.assert(response.body.authType === "JwtAuthenticationToken", "Unexpected authType: " + response.body.authType);
+        });
+    }
+%}
+
+### 4. Refresh token
+POST {{baseUrl}}/api/auth/refresh
+Authorization: Bearer {{refresh_token}}
+
+> {%
+    client.test("Refresh successful", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status);
+    });
+
+    var authInfo = response.body[0].authXBVO;
+    client.global.set("legacy_token", authInfo.token);
+    client.log("New access token stored");
+%}
+
+### 5. No token -> 401 (legacy JSON error, oauth-client-enabled is false by default)
+GET {{baseUrl}}/api/admin/whoami
+
+> {%
+    client.test("No token -> 401", function() {
+        client.assert(response.status === 401, "Expected 401, got " + response.status);
+    });
+%}
+
+### 6. Malformed/invalid token -> 401
+GET {{baseUrl}}/api/admin/whoami
+Authorization: Bearer invalid.token.value
+
+> {%
+    client.test("Invalid token -> 401", function() {
+        client.assert(response.status === 401, "Expected 401, got " + response.status);
+    });
+%}
+
+### =============================================================================
+### PERSONNEL access: /personnel/whoami is gated by @PreAuthorize on the method
+### (not a SecurityConfig URL matcher like /admin/**) with hasAnyRole('PERSONNEL',
+### 'SYSTEM_ADMIN') - so a PERSONNEL token works, and a SYSTEM_ADMIN token works
+### too (as an override), but neither role is required to have both. Exercised
+### with an actual PERSONNEL-holding user's token, obtained by logging in here
+### first - same requirement as step 3 above, just for a different role. Uses the
+### default seeded "personnel" account (see README - only present on a fresh
+### database; swap the credentials below if testing against real data).
+### =============================================================================
+
+### 7. Login as the seeded PERSONNEL user - token must be obtained here before step 8
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{non_admin_username}}",
+  "password": "{{non_admin_password}}"
+}
+
+> {%
+    client.test("Personnel login successful", function() {
+        client.assert(response.status === 200, "Expected 200, got " + response.status);
+    });
+
+    var authInfo = response.body[0].authXBVO;
+    client.test("Personnel token returned", function() {
+        client.assert(authInfo.token !== undefined, "Access token missing");
+    });
+
+    client.global.set("personnel_legacy_token", authInfo.token);
+    client.log("Personnel login: " + authInfo.login);
+%}
+
+### 8. Personnel token reaches /personnel/whoami (PERSONNEL required by @PreAuthorize)
+GET {{baseUrl}}/api/personnel/whoami
+Authorization: Bearer {{personnel_legacy_token}}
+
+> {%
+    client.test("Personnel token accepted for /personnel/whoami", function() {
+        client.assert(response.status === 200, "Expected 200 (user needs PERSONNEL), got " + response.status);
+    });
+
+    if (response.status === 200) {
+        client.test("Roles mapped to ROLE_PERSONNEL", function() {
+            client.assert(response.body.roles.indexOf("ROLE_PERSONNEL") !== -1,
+                "Expected ROLE_PERSONNEL in " + JSON.stringify(response.body.roles));
+        });
+    }
+%}
+
+### 9. Personnel token rejected by /admin/whoami (no SYSTEM_ADMIN) -> 403
+GET {{baseUrl}}/api/admin/whoami
+Authorization: Bearer {{personnel_legacy_token}}
+
+> {%
+    client.test("Personnel token -> 403 on /admin/whoami", function() {
+        client.assert(response.status === 403, "Expected 403, got " + response.status);
+    });
+%}
+
+### 10. Admin token (from step 2) also allowed on /personnel/whoami (SYSTEM_ADMIN overrides)
+GET {{baseUrl}}/api/personnel/whoami
+Authorization: Bearer {{legacy_token}}
+
+> {%
+    client.test("Admin token accepted for /personnel/whoami", function() {
+        client.assert(response.status === 200, "Expected 200 (SYSTEM_ADMIN overrides PERSONNEL), got " + response.status);
+    });
+
+    if (response.status === 200) {
+        client.test("Roles include ROLE_SYSTEM_ADMIN", function() {
+            client.assert(response.body.roles.indexOf("ROLE_SYSTEM_ADMIN") !== -1,
+                "Expected ROLE_SYSTEM_ADMIN in " + JSON.stringify(response.body.roles));
+        });
+    }
+%}
